@@ -1,0 +1,34 @@
+#!/usr/bin/bash
+
+COMMIT_SHA=$(git rev-parse HEAD)
+C_PATTERN='.*/.*\.c$'
+
+if git diff-tree --no-commit-id --name-only -r $COMMIT_SHA | grep -q $C_PATTERN; then
+	modified_tests=$(git diff-tree --no-commit-id --name-only -r $COMMIT_SHA | grep $C_PATTERN)
+	result=""
+	for test in $modified_tests; do
+		executable=$(echo "$test" | sed 's/\.c$/.exe/')
+		if [ -e $executable ]; then
+			echo "Now executing $executable 1000 times..."
+			for ((i=1; i<=1000; i++)); do
+				result_before=${#result}
+				result+=$(./${executable})
+				result_after=${#result}
+				if [[ $result_before -ne $result_after ]]; then
+					 result+=$'\n'
+				fi
+			done
+		else
+			echo "File $executable does not exist"
+		fi
+	done
+
+	if [[ $result != "" ]]; then
+		echo "$result"
+		exit 1
+	else
+		echo "All tests passed!"
+	fi
+else
+	echo "No .c file changes detected, repeated testing won't run";
+fi

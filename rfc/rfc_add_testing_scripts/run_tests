@@ -1,0 +1,172 @@
+#!/usr/bin/bash
+
+# Common bash colours
+PRINT_GREEN=$(tput setaf 2)
+PRINT_RED=$(tput setaf 1)
+PRINT_NC=$(tput sgr0)
+BOLD=$(tput bold)
+
+#
+# Display Help
+#
+function display_help()
+{
+	echo "Usage: `basename $0` [-v]"
+	echo "	To run a single test directory: $ ./run_tests -v src/<directory>/all"
+	echo "	-v  Display verbose test failures"
+	echo "  -r  Generate test coverage report"
+	exit 0
+}
+
+#
+# Parse command options
+#
+display_verbose=0
+coverage_report=0
+OPTIND=1
+while getopts "hvr" option; do
+	case $option in
+		h|\?)
+			display_help
+			exit;;
+		v) display_verbose=1;;
+		r) coverage_report=1;;
+	esac
+done
+
+#
+# Define missing macros in config.mak
+#
+function configure_tests()
+{
+
+	cp config.mak.def config.mak
+	coverage_flags=''
+	if [[ $coverage_report == 1 ]]; then
+		coverage_flags='-fprofile-instr-generate -fcoverage-mapping'
+	fi
+
+    sed -i '/$(RUN_TEST) $< >$@ || true/s/^/\tLLVM_PROFILE_FILE=$<.profraw/' Makefile
+	sed -i "/CFLAGS += -pipe -std=c99 -D_POSIX_C_SOURCE=200809L -Wall -Wno-unused-function -Wno-missing-braces -Wno-unused -Wno-overflow/s/$/ -Wno-unused-command-line-argument -Wno-strict-prototypes/" config.mak
+    sed -i "/CFLAGS += -g/s/$/ -D_PC_TIMESTAMP_RESOLUTION -D_SC_XOPEN_UUCP ${coverage_flags}/" config.mak
+    sed -i "/LDFLAGS += -g/s/$/ ${coverage_flags}/" config.mak
+
+}
+
+#
+# Build and run the tests
+#
+function make_tests()
+{
+	make cleanall
+
+	if [[ $coverage_report == 1 ]]; then
+		CC=/usr/local/musl/bin/musl-clang make $1
+	else
+		CC=/usr/local/musl/bin/musl-gcc make $1
+	fi
+
+	if [[ "$1" != '' ]]; then
+		IFS='/' read -ra line < <(printf '%s\n' "$1");
+		cat "${line[0]}/${line[1]}/REPORT"
+	fi
+}
+
+#
+# Parse the makefile output and find passed tests
+#
+passed_test_count=0
+failed_test_count=0
+function print_passed_tests()
+{
+	printf "${BOLD}${PRINT_GREEN}=== TESTS PASSED ===${PRINT_NC}\n"
+	pass="${PRINT_GREEN}PASS$PRINT_NC"
+	while IFS=' ' read -ra line; do
+		if grep -q "${line[4]}" <<< "$2"; then
+			((failed_test_count++))
+			continue
+		fi
+		printf "%-70s %s\n" "TEST ${line[4]}" "$pass"
+		((passed_test_count++))
+	done < <(printf '%s\n' "$1")
+}
+
+#
+# Parse the makefile output and find failed tests
+#
+unexpected_failure=0
+function print_failed_tests()
+{
+	printf "${BOLD}${PRINT_RED}=== TESTS FAILED ===${PRINT_NC}\n"
+	fail="${PRINT_RED}FAIL$PRINT_NC"
+	while IFS=' ' read -ra line; do
+		# Notify an expected failure
+		if grep -q "${line[1]}" <<< "$3"; then
+			printf "%-70s %s\n" "TEST ${line[1]} (expected failure)" "$fail"
+		else
+			printf "%-70s %s\n" "TEST ${line[1]}" "$fail"
+			((unexpected_failure++))
+		fi
+
+		# If verbose, then print out the reason for failure
+		if [[ $2 == 1 ]]; then
+			err_file="${line[1]/.exe/.err}"
+			build_err_file="${line[1]/.exe/.o.err}"
+			echo "$(cat $err_file)" | sed 's/^/  /'
+			if [[ -f "$build_err_file" ]]; then
+				echo "$(cat $build_err_file)" | sed 's/^/  /'
+			fi
+			echo ""
+		fi
+	done < <(printf '%s\n' "$1")
+}
+
+#
+# Shift the arguments
+#
+shift $((OPTIND-1))
+[ "${1:-}" = "--" ] && shift
+
+#
+# Configure and run the tests
+#
+configure_tests
+result=$(make_tests $1)
+passed_tests=$(echo "$result" | grep "^.*runtest.exe.*true.*$")
+failed_tests=$(echo "$result" | grep "^FAIL.*")
+
+#
+# Known expected failures
+#
+expected_failures="
+src/functional/strptime.exe
+src/functional/strptime-static.exe
+src/functional/utime.exe
+src/functional/utime-static.exe
+src/functional/mntent.exe
+src/functional/mntent-static.exe
+src/math/fma.exe
+src/math/fmal.exe
+src/math/powf.exe"
+
+print_passed_tests "$passed_tests" "$failed_tests"
+total_tests=$((passed_test_count + failed_test_count))
+
+# Log the outputs
+printf "${BOLD}${PRINT_GREEN}%s${PRINT_NC}\n" "${passed_test_count} out of ${total_tests} tests passed"
+echo ""
+if [[ $failed_tests != "" ]]; then
+	print_failed_tests "$failed_tests" $display_verbose "${expected_failures}"
+	printf "${BOLD}${PRINT_RED}%s${PRINT_NC}\n" "${failed_test_count} out of ${total_tests} tests failed"
+else
+	printf "${BOLD}${PRINT_GREEN}=== ALL ${total_tests} TESTS PASSED ===${PRINT_NC}\n"
+fi
+
+if [[ $coverage_report == 1 ]]; then
+	# Generate coverage report
+	llvm-profdata-19 merge -sparse ./src/*/*.profraw -o test.profdata
+	llvm-cov-19 report -show-mcdc-summary /usr/local/musl/lib/libc.so --instr-profile=test.profdata > libc_test_coverage_report.txt
+	cat libc_test_coverage_report.txt
+fi
+
+exit $unexpected_failure;

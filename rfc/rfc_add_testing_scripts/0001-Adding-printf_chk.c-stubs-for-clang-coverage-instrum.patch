@@ -1,0 +1,85 @@
+From c1c0e958b4c6f4176b24b7d4c2bccf5e31c5dea1 Mon Sep 17 00:00:00 2001
+From: Ryan Ward <ryan.c.ward3@boeing.com>
+Date: Thu, 21 Nov 2024 10:28:37 +1000
+Subject: [PATCH] Adding *printf_chk.c stubs for clang coverage instrumentation
+
+---
+ src/stdio/__fprintf_chk.c  | 12 ++++++++++++
+ src/stdio/__snprintf_chk.c | 13 +++++++++++++
+ src/stdio/__sprintf_chk.c  | 12 ++++++++++++
+ src/stdio/__vfprintf_chk.c |  6 ++++++
+ 4 files changed, 43 insertions(+)
+ create mode 100644 src/stdio/__fprintf_chk.c
+ create mode 100644 src/stdio/__snprintf_chk.c
+ create mode 100644 src/stdio/__sprintf_chk.c
+ create mode 100644 src/stdio/__vfprintf_chk.c
+
+diff --git a/src/stdio/__fprintf_chk.c b/src/stdio/__fprintf_chk.c
+new file mode 100644
+index 00000000..7a525744
+--- /dev/null
++++ b/src/stdio/__fprintf_chk.c
+@@ -0,0 +1,12 @@
++#include <stdarg.h>
++#include <stdio.h>
++
++int __fprintf_chk(FILE *f, int flag, const char *fmt, ...)
++{
++	int ret;
++	va_list ap;
++	va_start(ap, fmt);
++	ret = vfprintf(f, fmt, ap);
++	va_end(ap);
++	return ret;
++}
+diff --git a/src/stdio/__snprintf_chk.c b/src/stdio/__snprintf_chk.c
+new file mode 100644
+index 00000000..9e31b71d
+--- /dev/null
++++ b/src/stdio/__snprintf_chk.c
+@@ -0,0 +1,13 @@
++#include <stdarg.h>
++#include <stdio.h>
++
++int __snprintf_chk(char *s, size_t n, int flag, size_t slen,
++                   const char *fmt, ...)
++{
++	int ret;
++	va_list ap;
++	va_start(ap, fmt);
++	ret = vsnprintf(s, n, fmt, ap);
++	va_end(ap);
++	return ret;
++}
+diff --git a/src/stdio/__sprintf_chk.c b/src/stdio/__sprintf_chk.c
+new file mode 100644
+index 00000000..f5c3ddf9
+--- /dev/null
++++ b/src/stdio/__sprintf_chk.c
+@@ -0,0 +1,12 @@
++#include <stdarg.h>
++#include <stdio.h>
++
++int __sprintf_chk(char *s, int flag, size_t slen, const char *fmt, ...)
++{
++	int ret;
++	va_list ap;
++	va_start(ap, fmt);
++	ret = vsprintf(s, fmt, ap);
++	va_end(ap);
++	return ret;
++}
+diff --git a/src/stdio/__vfprintf_chk.c b/src/stdio/__vfprintf_chk.c
+new file mode 100644
+index 00000000..7f00727f
+--- /dev/null
++++ b/src/stdio/__vfprintf_chk.c
+@@ -0,0 +1,6 @@
++#include <stdio.h>
++
++int __vfprintf_chk(FILE *f, int flag, const char *fmt, va_list ap)
++{
++	return vfprintf(f, fmt, ap);
++}
+-- 
+2.34.1
